@@ -21,7 +21,7 @@ source("http://www.math.montana.edu/courses/s217/documents/intplotfunctions_v3.R
 ## Loading Data
 
 ```{r}
-ep2 <- read_csv("epworth2.csv")
+ep2 <- read_csv("data/epworth2.csv")
 head(ep2)
 ```
 
