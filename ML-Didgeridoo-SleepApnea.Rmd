@@ -1,0 +1,187 @@
+---
+title: "Didgeridoos & Sleep Apnea"
+author: "Harley Clifton"
+date: "2024-08-29"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(patchwork)
+library(car)
+library(emmeans)
+
+library(remotes)
+#remotes::install_github("greenwood-stat/catstats")
+#library(catstats)
+
+source("http://www.math.montana.edu/courses/s217/documents/intplotfunctions_v3.R")
+```
+ 
+## Loading Data
+
+```{r}
+ep2 <- read_csv("epworth2.csv")
+head(ep2)
+```
+
+__1) What is their primary response variable?__
+
+The primary response variable is daytime sleepiness as measured on the Epworth scale from a range of 0 (no daytime sleepiness) to 24, with greater than 11 representing excessive daytime sleepiness.
+
+
+
+__2) How did they design their study? Was it randomized? If so, was it completely randomized?__
+
+The patients were grouped by strata based on disease severity and epworth score before they were assigned to the treatment groups, so it was not completely randomized. After the patients were split into strata, they were randomly assigned to either the intervention group, who received didgeridoo training, or the control group.
+
+
+$~$
+
+## Data Wrangling
+
+```{r}
+ep2 <- ep2 %>% mutate(Baseline_Followup = factor(Baseline_Followup),
+                      Group = factor(Group), 
+                      # Note that Group = C for control and Group = D for Didgeridoo
+                      Subject = factor(Subject)) 
+                      # added code to make it read subject as factor variable
+
+levels(ep2$Baseline_Followup) <- c("Baseline", "Followup") 
+# 1 was Baseline and 2 was Followup after four months
+
+head(ep2)
+```
+
+
+$~$
+
+## Exploratory Data Analysis
+
+```{r}
+summary(ep2)
+```
+
+```{r}
+group.colors <- c(C = 'blue2', D = 'orange1')
+
+Spaghetti <- ep2 %>% 
+  ggplot(mapping = aes(x = Baseline_Followup, y = Epworth, group = Subject)) +
+  geom_line(aes(color = Group)) +
+  geom_point(aes(color = Group)) +
+  labs(title = "Spaghetti Plot of Epworth Score",
+       x = "",
+       y = "Epworth") +
+  theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5)) +  
+  scale_color_manual(values = c('blue2', 'orange1'))
+
+
+Spaghetti_facet <- ep2 %>% 
+  ggplot(mapping = aes(x = Baseline_Followup, y = Epworth, group = Subject)) +
+  geom_line(aes(color = Group)) +
+  geom_point(aes(color = Group)) +
+  facet_wrap(vars(Group))  +
+  labs(title = "Facet by Group",
+       x = "",
+       y = "Epworth") +
+  theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = "none") +
+  scale_color_manual(values = group.colors)
+
+Spaghetti + Spaghetti_facet
+
+```
+
+
+$~$
+
+## Exploring Interactions
+
+```{r}
+intplotarray(Epworth ~ Group*Baseline_Followup, 
+             col = c (1,2), 
+             data = ep2, 
+             main = "Interaction Plot")
+```
+
+Based on the interaction plot array, there seems to be a clear interaction between Group and Baseline/Follow up measurements on our response, Epworth score. The slopes of the lines are not parallel, which suggests that differences at different levels of the x-axis variable (Baseline/FollowUp, Group) are not all the same on the response (Epworth). From the graphs, it looks like the Baseline measurement for both the control and treatment groups did not vary much in Epworth score. However, the Follow up measurement decreased dramatically in the group that received didgeridoo training, but only decreased slightly in the control group.
+
+
+
+$~$
+
+## Modeling
+
+### Fitting an Interaction Model (Controlling for Subject)
+
+```{r}
+## Control for Subject
+
+lm.ep <- lm(Epworth ~ Baseline_Followup * Group + Subject, data = ep2)
+Anova(lm.ep)
+```
+
+There is strong evidence against the null hypothesis that there is no interaction between Group and Baseline_Followup on the response, Epworth Score, controlling for Subject (F(1,23) = 5.4315, p-value = 0.029), so it suggests the interaction term should remain in the model.
+
+
+$$Epworth \sim  Subject + Baseline\_Followup * Group$$
+
+
+$~$
+
+## Model Diagnostics
+
+```{r}
+par(mfrow = c(2,2))
+plot(lm.ep, pch = 16)
+```
+
+```{r}
+plot(lm.ep, pch = 16)
+```
+
+$~$
+
+## Contrasts
+
+```{r}
+#Create BF_Group
+ep2 <- ep2 %>% mutate(BF_Group = interaction(Baseline_Followup, Group))
+table(ep2$BF_Group)
+
+lm_flat <- lm(Epworth ~ BF_Group + Subject, data = ep2) 
+Anova(lm_flat) 
+#Hint: make sure you have fixed the issue with the "Subject" variable in my model
+```
+
+
+
+
+This is attempting to test $H_0:\mu_{Baseline.D} = \mu_{Followup.D}$ 
+
+```{r}
+lm_flat.emms <- emmeans(lm_flat, "BF_Group")
+
+contrast(lm_flat.emms,list(gamma1 = c(0, 0, -1, 1)))
+```
+
+Our estimate of the change in the Didgeridoo group from baseline to follow up was 4.46 point decrease on the Epworth scale. The authors reported an estimated decrease of 4.4 points on the Epworth scale. Therefore, our results are consistent with those in the paper.
+
+---
+
+$$\mu_{Followup.D}-\mu_{Baseline.D}=\mu_{Followup.C}-\mu_{Baseline.C}$$
+
+This is attempting to test $H_0:\mu_{2.D}-\mu_{1.D}=\mu_{2.C}-\mu_{1.C}$ or $H_0:\mu_{2.D}-\mu_{1.D}-\mu_{2.C}+\mu_{1.C}=0$ or $H_0:\mu_{1.C}-\mu_{2.C}-\mu_{1.D}+\mu_{2.D}=0$, controlling for subject to subject variation. 
+
+- The coefficients to test this using the contrast would be (1,-1,-1,1) based on the order of the levels of the factor as seen from the table() result above.
+
+```{r}
+contrast(lm_flat.emms,list(gamma2 = c(1,-1,-1,1)))
+confint(contrast(lm_flat.emms,list(gamma2 = c(1,-1,-1,1))))
+```
+
+- "Evidence" sentence: There is moderate evidence against the null hypothesis of no difference in the changes over time between the two groups on epworth responses (t(23)=-2.33; two-sided p-value of 0.029) after controlling for subject to subject variation, so we would conclude that there is a difference in the changes over time in sleepiness that is caused by the treatment applied to the subjects.
+
+- "Size" sentence: **The mean Epworth Score is estimated to be -3.08 points on the Epworth Scale different between the Control group and the Didgeridoo treatment group (Control - Didgeridoo) with a 95% confidence interval from -5.82 to -0.35 points in the Epworth Scale.**
